@@ -15,48 +15,84 @@
     const { useState, useEffect } = React;
 
     function App() {
+      // データの読み込み
       const [events, setEvents] = useState(() => {
         const saved = localStorage.getItem('event_tickets_data');
         return saved ? JSON.parse(saved) : [];
       });
 
+      // データの保存
       useEffect(() => {
         localStorage.setItem('event_tickets_data', JSON.stringify(events));
       }, [events]);
 
-      const [newEvent, setNewEvent] = useState({
+      // フォームの初期状態
+      const initialFormState = {
         title: '', startDate: '', endDate: '', location: '', eventUrl: '',
         tickets: [{ date: '', type: '', price: '', url: '', status: '応募前', memo: '' }]
-      });
+      };
 
+      const [formData, setFormData] = useState(initialFormState);
+      const [editingId, setEditingId] = useState(null); // 編集中のイベントID
+
+      // チケット枠の追加
       const addTicket = () => {
-        setNewEvent({
-          ...newEvent,
-          tickets: [...newEvent.tickets, { date: '', type: '', price: '', url: '', status: '応募前', memo: '' }]
+        setFormData({
+          ...formData,
+          tickets: [...formData.tickets, { date: '', type: '', price: '', url: '', status: '応募前', memo: '' }]
         });
       };
 
+      // チケット枠の削除（追加機能）
+      const removeTicket = (indexToRemove) => {
+        const updatedTickets = formData.tickets.filter((_, index) => index !== indexToRemove);
+        setFormData({ ...formData, tickets: updatedTickets });
+      };
+
+      // チケット入力のハンドリング
       const handleTicketChange = (index, field, value) => {
-        const updatedTickets = [...newEvent.tickets];
+        const updatedTickets = [...formData.tickets];
         updatedTickets[index][field] = value;
-        setNewEvent({ ...newEvent, tickets: updatedTickets });
+        setFormData({ ...formData, tickets: updatedTickets });
       };
 
+      // イベントの保存（新規作成 ＆ 更新）
       const saveEvent = () => {
-        if (!newEvent.title) return alert('イベント名を入力してください');
-        setEvents([{ ...newEvent, id: Date.now() }, ...events]);
-        setNewEvent({
-          title: '', startDate: '', endDate: '', location: '', eventUrl: '',
-          tickets: [{ date: '', type: '', price: '', url: '', status: '応募前', memo: '' }]
-        });
+        if (!formData.title) return alert('イベント名を入力してください');
+        
+        if (editingId) {
+          // 編集モードの場合（上書き）
+          setEvents(events.map(e => e.id === editingId ? { ...formData, id: editingId } : e));
+          setEditingId(null); // 編集モード終了
+        } else {
+          // 新規作成の場合
+          setEvents([{ ...formData, id: Date.now() }, ...events]);
+        }
+        setFormData(initialFormState); // フォームを空に戻す
       };
 
+      // 編集ボタンを押した時の処理
+      const startEdit = (event) => {
+        setFormData(event);
+        setEditingId(event.id);
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // 画面一番上のフォームへスクロール
+      };
+
+      // 編集キャンセル
+      const cancelEdit = () => {
+        setFormData(initialFormState);
+        setEditingId(null);
+      };
+
+      // イベントの削除
       const deleteEvent = (id) => {
         if(window.confirm('このイベントを削除しますか？')) {
           setEvents(events.filter(e => e.id !== id));
+          if(editingId === id) cancelEdit(); // 編集中のものを削除したらフォームもリセット
         }
       };
 
+      // ステータス更新（一覧側からの直接操作）
       const updateTicketStatus = (eventId, ticketIndex, newStatus) => {
         const updatedEvents = events.map(event => {
           if (event.id === eventId) {
@@ -89,7 +125,7 @@
             {events.length > 0 && (
               <div className="flex gap-4 overflow-x-auto pb-4">
                 {events.map(event => (
-                  <a key={event.id} href={`#event-${event.id}`} className="flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:-translate-y-1 transition-all w-64 block">
+                  <a key={`summary-${event.id}`} href={`#event-${event.id}`} className="flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:shadow-md hover:-translate-y-1 transition-all w-64 block">
                     <h3 className="font-bold text-gray-800 truncate">{event.title}</h3>
                     <p className="text-xs text-gray-500 mt-1">📅 {event.startDate || '未定'} 〜 {event.endDate || '未定'}</p>
                   </a>
@@ -99,37 +135,47 @@
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
-              <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
-                <h2 className="text-xl font-bold mb-4 border-b pb-2">✏️ 新規イベント登録</h2>
+              {/* 入力・編集フォーム */}
+              <div className={`lg:col-span-1 bg-white p-6 rounded-xl shadow-sm border h-fit transition-colors ${editingId ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}>
+                <h2 className="text-xl font-bold mb-4 border-b pb-2 flex justify-between items-center">
+                  <span>{editingId ? '📝 イベントを編集' : '✏️ 新規イベント登録'}</span>
+                  {editingId && (
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">編集中</span>
+                  )}
+                </h2>
+                
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">イベント名</label>
-                    <input type="text" className="w-full p-2 border rounded bg-gray-50" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="例: 〇〇展覧会" />
+                    <input type="text" className="w-full p-2 border rounded bg-gray-50" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="例: 〇〇展覧会" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-bold text-gray-600 mb-1">開始日</label>
-                      <input type="date" className="w-full p-2 border rounded bg-gray-50" value={newEvent.startDate} onChange={e => setNewEvent({...newEvent, startDate: e.target.value})} />
+                      <input type="date" className="w-full p-2 border rounded bg-gray-50" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-gray-600 mb-1">終了日</label>
-                      <input type="date" className="w-full p-2 border rounded bg-gray-50" value={newEvent.endDate} onChange={e => setNewEvent({...newEvent, endDate: e.target.value})} />
+                      <input type="date" className="w-full p-2 border rounded bg-gray-50" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} />
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">会場</label>
-                    <input type="text" className="w-full p-2 border rounded bg-gray-50" value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} />
+                    <input type="text" className="w-full p-2 border rounded bg-gray-50" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-600 mb-1">公式サイトURL</label>
-                    <input type="url" className="w-full p-2 border rounded bg-gray-50" value={newEvent.eventUrl} onChange={e => setNewEvent({...newEvent, eventUrl: e.target.value})} />
+                    <input type="url" className="w-full p-2 border rounded bg-gray-50" value={formData.eventUrl} onChange={e => setFormData({...formData, eventUrl: e.target.value})} />
                   </div>
 
                   <div className="pt-4 border-t">
                     <h3 className="text-sm font-bold text-gray-700 mb-3">🎫 チケット・応募情報</h3>
-                    {newEvent.tickets.map((ticket, index) => (
-                      <div key={index} className="p-3 bg-blue-50 rounded-lg mb-3 space-y-2 border border-blue-100">
-                        <div className="grid grid-cols-2 gap-2">
+                    {formData.tickets.map((ticket, index) => (
+                      <div key={index} className="p-3 bg-blue-50 rounded-lg mb-3 space-y-2 border border-blue-100 relative">
+                        {formData.tickets.length > 1 && (
+                          <button onClick={() => removeTicket(index)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 font-bold" title="このチケットを削除">✕</button>
+                        )}
+                        <div className="grid grid-cols-2 gap-2 pr-6">
                           <input type="date" className="p-2 border rounded text-sm" value={ticket.date} onChange={e => handleTicketChange(index, 'date', e.target.value)} />
                           <input type="text" placeholder="席種" className="p-2 border rounded text-sm" value={ticket.type} onChange={e => handleTicketChange(index, 'type', e.target.value)} />
                         </div>
@@ -142,10 +188,21 @@
                     ))}
                     <button onClick={addTicket} className="text-blue-600 text-sm font-bold hover:underline mb-4">＋ 別の公演・チケットを追加</button>
                   </div>
-                  <button onClick={saveEvent} className="w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700">保存する</button>
+                  
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={saveEvent} className="flex-1 bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700">
+                      {editingId ? '変更を保存する' : '登録する'}
+                    </button>
+                    {editingId && (
+                      <button onClick={cancelEdit} className="w-24 bg-gray-300 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-400">
+                        キャンセル
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
+              {/* イベント一覧表示エリア */}
               <div className="lg:col-span-2 space-y-6">
                 {events.length === 0 ? (
                   <div className="bg-white p-10 rounded-xl text-center text-gray-400 border border-dashed">
@@ -153,7 +210,7 @@
                   </div>
                 ) : (
                   events.map((event) => (
-                    <div key={event.id} id={`event-${event.id}`} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden scroll-mt-6">
+                    <div key={event.id} id={`event-${event.id}`} className={`bg-white rounded-xl shadow-sm border overflow-hidden scroll-mt-6 transition-all ${editingId === event.id ? 'border-blue-400 shadow-md' : 'border-gray-200'}`}>
                       <div className="bg-slate-50 p-4 border-b border-gray-200 flex justify-between items-start">
                         <div>
                           <h3 className="text-xl font-bold text-gray-800">{event.title}</h3>
@@ -163,7 +220,10 @@
                           </div>
                           {event.eventUrl && <a href={event.eventUrl} target="_blank" className="inline-block mt-2 text-xs bg-gray-200 text-gray-700 px-3 py-1 rounded-full hover:bg-gray-300">🔗 公式サイト</a>}
                         </div>
-                        <button onClick={() => deleteEvent(event.id)} className="text-gray-400 hover:text-red-500 text-xl">🗑️</button>
+                        <div className="flex gap-3">
+                          <button onClick={() => startEdit(event)} className="text-gray-400 hover:text-blue-500 text-xl" title="編集する">✏️</button>
+                          <button onClick={() => deleteEvent(event.id)} className="text-gray-400 hover:text-red-500 text-xl" title="削除する">🗑️</button>
+                        </div>
                       </div>
                       <div className="p-4 space-y-3">
                         {event.tickets.map((ticket, tIndex) => (
